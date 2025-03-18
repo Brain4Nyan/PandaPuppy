@@ -6,6 +6,10 @@ interface TableRow {
   entryName: string;
   debit: number;
   credit: number;
+  primaryClassification: string;
+  secondaryClassification: string;
+  tertiaryClassification: string;
+  flagStatus?: string;
 }
 
 function App() {
@@ -55,7 +59,15 @@ function App() {
           const credit = parseFloat(row[2]) || 0;
 
           if (entryName && (debit !== 0 || credit !== 0)) {
-            processedData.push({ entryName, debit, credit });
+            // Attempt to classify the entry
+            const classification = classifyEntry(entryName);
+            
+            processedData.push({
+              entryName,
+              debit,
+              credit,
+              ...classification
+            });
           }
         }
 
@@ -67,6 +79,22 @@ function App() {
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const classifyEntry = (entryName: string): {
+    primaryClassification: string;
+    secondaryClassification: string;
+    tertiaryClassification: string;
+    flagStatus?: string;
+  } => {
+    // This is a placeholder for the classification logic
+    // In a real implementation, this would match against the master classification sheet
+    return {
+      primaryClassification: 'UNKNOWN',
+      secondaryClassification: 'UNKNOWN',
+      tertiaryClassification: 'UNKNOWN',
+      flagStatus: 'Needs Classification Review'
+    };
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,9 +121,9 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h1 className="text-2xl font-bold text-gray-800 mb-6">Excel File Processor</h1>
+          <h1 className="text-2xl font-bold text-gray-800 mb-6">Financial Entry Classifier</h1>
           
           {/* Upload Section */}
           <div className="mb-8">
@@ -135,11 +163,23 @@ function App() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Credit
                       </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Primary Classification
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Secondary Classification
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Tertiary Classification
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Flag Status
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {tableData.map((row, index) => (
-                      <tr key={index}>
+                      <tr key={index} className={row.flagStatus ? 'bg-yellow-50' : ''}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {row.entryName}
                         </td>
@@ -148,6 +188,18 @@ function App() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {row.credit.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {row.primaryClassification}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {row.secondaryClassification}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {row.tertiaryClassification}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
+                          {row.flagStatus}
                         </td>
                       </tr>
                     ))}
