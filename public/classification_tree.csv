@@ -1,0 +1,14 @@
+Account Type,Primary Classification,Secondary Classification,Tertiary Classification
+Asset,Cash and Cash Equivalents (CASH),Cash Balances,Cash In Hand
+Asset,Cash and Cash Equivalents (CASH),Cash Balances,Unbanked Cash Collection
+Asset,Cash and Cash Equivalents (CASH),Bank Balances,Bank Balances
+Asset,Cash and Cash Equivalents (CASH),Payment Gateway Balances,Payment Gateway Balances
+Asset,Cash and Cash Equivalents (CASH),Cash Equivalents,Short Term Deposits
+Asset,Cash and Cash Equivalents (CASH),Cash Equivalents,Other Cash Equivalents
+Asset,Trade and Other Receivables (TREC),Trade Receivables,Trade Receivables
+Asset,Trade and Other Receivables (TREC),Allowance for Expected Credit Losses,Allowance for Expected Credit Losses
+Asset,Trade and Other Receivables (TREC),Trade Debits,Trade Debits
+Asset,Trade and Other Receivables (TREC),Deposit Receivables,Deposit Receivables
+Asset,Trade and Other Receivables (TREC),Non-Trade Receivables,Non-Trade Receivables
+Asset,Trade and Other Receivables (TREC),Loan Receivables,Loan Receivables
+Asset,Trade and Other Receivables (TREC),Other Receivable,Other Receivable

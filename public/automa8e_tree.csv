@@ -1,0 +1,57 @@
+Account Type,Primary Classification,Secondary Classification,Tertiary Classification
+Asset,Current Assets,Cash and Cash Equivalents,Cash on Hand
+Asset,Current Assets,Cash and Cash Equivalents,Bank Accounts
+Asset,Current Assets,Cash and Cash Equivalents,Short-term Investments
+Asset,Current Assets,Accounts Receivable,Trade Receivables
+Asset,Current Assets,Accounts Receivable,Other Receivables
+Asset,Current Assets,Inventory,Raw Materials
+Asset,Current Assets,Inventory,Work in Progress
+Asset,Current Assets,Inventory,Finished Goods
+Asset,Current Assets,Prepaid Expenses,Insurance
+Asset,Current Assets,Prepaid Expenses,Rent
+Asset,Non-Current Assets,Property Plant and Equipment,Land
+Asset,Non-Current Assets,Property Plant and Equipment,Buildings
+Asset,Non-Current Assets,Property Plant and Equipment,Machinery
+Asset,Non-Current Assets,Property Plant and Equipment,Vehicles
+Asset,Non-Current Assets,Property Plant and Equipment,Office Equipment
+Asset,Non-Current Assets,Intangible Assets,Patents
+Asset,Non-Current Assets,Intangible Assets,Trademarks
+Asset,Non-Current Assets,Intangible Assets,Software
+Asset,Non-Current Assets,Investments,Long-term Investments
+Asset,Non-Current Assets,Investments,Investment Properties
+Liability,Current Liabilities,Accounts Payable,Trade Payables
+Liability,Current Liabilities,Accounts Payable,Other Payables
+Liability,Current Liabilities,Short-term Borrowings,Bank Overdrafts
+Liability,Current Liabilities,Short-term Borrowings,Short-term Loans
+Liability,Current Liabilities,Accrued Expenses,Salaries Payable
+Liability,Current Liabilities,Accrued Expenses,Interest Payable
+Liability,Current Liabilities,Income Tax Payable,Current Tax Liabilities
+Liability,Non-Current Liabilities,Long-term Borrowings,Bank Loans
+Liability,Non-Current Liabilities,Long-term Borrowings,Bonds Payable
+Liability,Non-Current Liabilities,Deferred Tax Liabilities,Deferred Tax
+Liability,Non-Current Liabilities,Employee Benefits,Pension Obligations
+Equity,Share Capital,Ordinary Shares,Common Stock
+Equity,Share Capital,Preference Shares,Preferred Stock
+Equity,Reserves,Capital Reserves,Share Premium
+Equity,Reserves,Capital Reserves,Revaluation Reserve
+Equity,Reserves,Revenue Reserves,General Reserve
+Equity,Reserves,Revenue Reserves,Retained Earnings
+Revenue/Income,Operating Revenue,Sales Revenue,Product Sales
+Revenue/Income,Operating Revenue,Sales Revenue,Service Revenue
+Revenue/Income,Operating Revenue,Other Operating Income,Commission Income
+Revenue/Income,Operating Revenue,Other Operating Income,Rental Income
+Revenue/Income,Non-Operating Revenue,Investment Income,Interest Income
+Revenue/Income,Non-Operating Revenue,Investment Income,Dividend Income
+Revenue/Income,Non-Operating Revenue,Other Income,Gain on Sale of Assets
+Cost/Expense,Operating Expenses,Cost of Sales,Direct Materials
+Cost/Expense,Operating Expenses,Cost of Sales,Direct Labor
+Cost/Expense,Operating Expenses,Cost of Sales,Manufacturing Overhead
+Cost/Expense,Operating Expenses,Administrative Expenses,Office Expenses
+Cost/Expense,Operating Expenses,Administrative Expenses,Staff Salaries
+Cost/Expense,Operating Expenses,Selling Expenses,Marketing Expenses
+Cost/Expense,Operating Expenses,Selling Expenses,Sales Commission
+Cost/Expense,Operating Expenses,Depreciation,Depreciation of PPE
+Cost/Expense,Operating Expenses,Amortization,Amortization of Intangibles
+Cost/Expense,Non-Operating Expenses,Finance Costs,Interest Expense
+Cost/Expense,Non-Operating Expenses,Finance Costs,Bank Charges
+Cost/Expense,Non-Operating Expenses,Other Expenses,Loss on Sale of Assets
