@@ -12,7 +12,51 @@ interface ExcelData {
   };
 }
 
-export function processExcelFile(file: File): Promise<ExcelData> {
+interface SheetAnalysis {
+  isBalanceSheet: boolean;
+  confidence: number;
+}
+
+export function analyzeSheet(sheet: XLSX.WorkSheet): SheetAnalysis {
+  const balanceSheetKeywords = [
+    'balance sheet',
+    'statement of financial position',
+    'assets and liabilities',
+    'financial position',
+    'bs',
+    'balance'
+  ];
+
+  const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+  const firstFewRows = jsonData.slice(0, 5).flat().map(cell => 
+    cell?.toString().toLowerCase().trim() || ''
+  );
+
+  let confidence = 0;
+  
+  // Check for balance sheet keywords
+  const hasKeywords = firstFewRows.some(cell =>
+    balanceSheetKeywords.some(keyword => cell.includes(keyword))
+  );
+  if (hasKeywords) confidence += 0.6;
+
+  // Check for assets and liabilities/equity
+  const hasAssets = firstFewRows.some(cell => cell.includes('assets'));
+  const hasLiabilities = firstFewRows.some(cell => 
+    cell.includes('liabilities') || cell.includes('equity')
+  );
+  if (hasAssets && hasLiabilities) confidence += 0.4;
+
+  return {
+    isBalanceSheet: confidence > 0,
+    confidence
+  };
+}
+
+export function processExcelFile(
+  file: File, 
+  selectedSheet?: string
+): Promise<{ data: ExcelData; sheets: Array<{ name: string; isBalanceSheet: boolean; confidence: number }> }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -20,8 +64,25 @@ export function processExcelFile(file: File): Promise<ExcelData> {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData: any[] = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+        
+        // Analyze all sheets
+        const sheets = workbook.SheetNames.map(name => {
+          const sheet = workbook.Sheets[name];
+          const analysis = analyzeSheet(sheet);
+          return {
+            name,
+            isBalanceSheet: analysis.isBalanceSheet,
+            confidence: analysis.confidence
+          };
+        });
+
+        // Use selected sheet or find best match
+        const sheetToUse = selectedSheet || sheets.reduce((best, current) => 
+          current.confidence > (best?.confidence || 0) ? current : best
+        , sheets[0]).name;
+
+        const sheet = workbook.Sheets[sheetToUse];
+        const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
         // Find header row
         const headerRow = findHeaderRow(jsonData);
@@ -91,9 +152,12 @@ export function processExcelFile(file: File): Promise<ExcelData> {
         }
 
         resolve({
-          entries,
-          hasExistingClassification,
-          stats
+          data: {
+            entries,
+            hasExistingClassification,
+            stats
+          },
+          sheets
         });
       } catch (err) {
         reject(err);

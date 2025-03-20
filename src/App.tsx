@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Download, AlertCircle, Star } from 'lucide-react';
+import { Upload, Download, AlertCircle, Star, FileSpreadsheet } from 'lucide-react';
 import { ClassificationMatcher } from './utils/classificationMatcher';
 import { processExcelFile } from './utils/excelProcessor';
 import { ClassifiedEntry } from './utils/accountingRules';
@@ -19,6 +19,12 @@ interface ColumnOption {
   key: keyof TableRow;
   label: string;
   recommended?: boolean;
+}
+
+interface SheetInfo {
+  name: string;
+  isBalanceSheet: boolean;
+  confidence: number;
 }
 
 const COLUMN_OPTIONS: ColumnOption[] = [
@@ -54,6 +60,9 @@ function App() {
   const [selectedColumns, setSelectedColumns] = useState<Set<keyof TableRow>>(
     new Set(COLUMN_OPTIONS.filter(col => col.recommended).map(col => col.key))
   );
+  const [availableSheets, setAvailableSheets] = useState<SheetInfo[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>('');
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
 
   useEffect(() => {
     fetch('/automa8e_tree.csv')
@@ -68,19 +77,20 @@ function App() {
       });
   }, []);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.match(/\.(xls|xlsx)$/)) {
-      setError('Please upload a valid Excel file (.xls or .xlsx)');
-      return;
-    }
-
+  const processFile = async (file: File, sheet?: string) => {
     try {
-      const { entries, hasExistingClassification, stats } = await processExcelFile(file);
+      const { data, sheets } = await processExcelFile(file, sheet);
+      setAvailableSheets(sheets);
       
-      const processedData: TableRow[] = entries.map(entry => {
+      if (!sheet) {
+        // If no sheet is selected, use the one with highest confidence
+        const bestSheet = sheets.reduce((best, current) => 
+          current.confidence > (best?.confidence || 0) ? current : best
+        , sheets[0]);
+        setSelectedSheet(bestSheet.name);
+      }
+
+      const processedData: TableRow[] = data.entries.map(entry => {
         let classification = classificationMatcher?.findBestMatch(entry.entryName, entry.accountType);
         
         let flagStatus: string | undefined;
@@ -101,17 +111,38 @@ function App() {
       });
 
       const updatedStats = {
-        ...stats,
+        ...data.stats,
         needsReview: processedData.filter(row => row.flagStatus !== undefined).length
       };
 
       setTableData(processedData);
       setStats(updatedStats);
-      setHasExistingClassification(hasExistingClassification);
+      setHasExistingClassification(data.hasExistingClassification);
       setError(null);
     } catch (err) {
       setError('Unable to process the file. Please check the format and try again.');
       setTableData([]);
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.match(/\.(xls|xlsx)$/)) {
+      setError('Please upload a valid Excel file (.xls or .xlsx)');
+      return;
+    }
+
+    setCurrentFile(file);
+    await processFile(file);
+  };
+
+  const handleSheetChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const sheet = event.target.value;
+    setSelectedSheet(sheet);
+    if (currentFile) {
+      await processFile(currentFile, sheet);
     }
   };
 
@@ -225,6 +256,28 @@ function App() {
                 onChange={handleFileUpload}
               />
             </label>
+
+            {availableSheets.length > 0 && (
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Sheet to Process
+                </label>
+                <div className="flex items-center space-x-2">
+                  <FileSpreadsheet className="w-5 h-5 text-gray-500" />
+                  <select
+                    value={selectedSheet}
+                    onChange={handleSheetChange}
+                    className="block w-64 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  >
+                    {availableSheets.map((sheet, index) => (
+                      <option key={index} value={sheet.name}>
+                        {sheet.name} {sheet.isBalanceSheet ? '(Balance Sheet)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
