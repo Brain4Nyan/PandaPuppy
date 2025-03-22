@@ -24,7 +24,9 @@ export function analyzeSheet(sheet: XLSX.WorkSheet): SheetAnalysis {
     'assets and liabilities',
     'financial position',
     'bs',
-    'balance'
+    'balance',
+    'tb',
+    'trial balance'
   ];
 
   const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
@@ -39,6 +41,11 @@ export function analyzeSheet(sheet: XLSX.WorkSheet): SheetAnalysis {
     balanceSheetKeywords.some(keyword => cell.includes(keyword))
   );
   if (hasKeywords) confidence += 0.6;
+
+  // Check for typical trial balance columns
+  const headers = jsonData[0]?.map((h: any) => (h?.toString() || '').toLowerCase().trim());
+  const hasDebitCredit = headers?.some(h => h.includes('debit') || h.includes('credit'));
+  if (hasDebitCredit) confidence += 0.4;
 
   // Check for assets and liabilities/equity
   const hasAssets = firstFewRows.some(cell => cell.includes('assets'));
@@ -82,20 +89,33 @@ export function processExcelFile(
         , sheets[0]).name;
 
         const sheet = workbook.Sheets[sheetToUse];
-        const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { 
+          header: 1,
+          raw: false,
+          defval: ''
+        });
 
-        // Find header row
+        // Find header row and column indices
         const headerRow = findHeaderRow(jsonData);
         if (headerRow === -1) {
           throw new Error('Could not find header row in Excel file');
         }
 
-        // Check if file has existing Credit/Debit classification
         const headers = jsonData[headerRow].map((h: string) => 
           h?.toString().toLowerCase().trim()
         );
-        const hasExistingClassification = 
-          headers.includes('credit') && headers.includes('debit');
+
+        // Find relevant column indices
+        const accountCol = headers.findIndex(h => h.includes('account') && !h.includes('type'));
+        const typeCol = headers.findIndex(h => h.includes('type'));
+        const debitCol = headers.findIndex(h => h.includes('debit'));
+        const creditCol = headers.findIndex(h => h.includes('credit'));
+
+        if (accountCol === -1) {
+          throw new Error('Could not find account column');
+        }
+
+        const hasExistingClassification = debitCol !== -1 && creditCol !== -1;
 
         const stats = {
           totalRows: 0,
@@ -113,13 +133,17 @@ export function processExcelFile(
 
           stats.totalRows++;
 
-          const entryName = row[0]?.toString() || '';
-          const accountType = determineAccountType(i, jsonData);
-          
+          const entryName = row[accountCol]?.toString().trim() || '';
+          if (!entryName) continue;
+
+          const accountType = typeCol !== -1 ? 
+            row[typeCol]?.toString().trim() || determineAccountType(i, jsonData) :
+            determineAccountType(i, jsonData);
+
           if (hasExistingClassification) {
-            // Use existing classification
-            const debit = parseFloat(row[1]) || 0;
-            const credit = parseFloat(row[2]) || 0;
+            // Parse debit and credit values, handling currency formatting
+            const debit = parseFloat(row[debitCol]?.toString().replace(/[^0-9.-]/g, '') || '0');
+            const credit = parseFloat(row[creditCol]?.toString().replace(/[^0-9.-]/g, '') || '0');
             
             entries.push({
               entryName,
@@ -132,15 +156,10 @@ export function processExcelFile(
             });
             stats.preClassified++;
           } else {
-            // Auto-classify based on amount
-            const amount = parseFloat(row[1]) || 0;
+            const amount = parseFloat(row[1]?.toString().replace(/[^0-9.-]/g, '') || '0');
             if (amount !== 0) {
               const entry = classifyEntry(entryName, amount, accountType);
-              entries.push({
-                ...entry,
-                debitAmount: entry.classification === 'Debit' ? Math.abs(amount) : null,
-                creditAmount: entry.classification === 'Credit' ? Math.abs(amount) : null
-              });
+              entries.push(entry);
               
               if (entry.needsReview) {
                 stats.needsReview++;
@@ -173,18 +192,20 @@ export function processExcelFile(
 }
 
 function findHeaderRow(data: any[]): number {
-  for (let i = 0; i < data.length; i++) {
+  const headerKeywords = ['account', 'debit', 'credit', 'amount', 'type'];
+  
+  for (let i = 0; i < Math.min(10, data.length); i++) {
     const row = data[i];
     if (row && (row.some((cell: any) => 
       typeof cell === 'string' && 
-      ['account', 'debit', 'credit', 'amount'].some(header => 
-        cell.toLowerCase().includes(header)
+      headerKeywords.some(keyword => 
+        cell.toLowerCase().includes(keyword)
       )
     ))) {
       return i;
     }
   }
-  return -1;
+  return 0; // Default to first row if no header found
 }
 
 function shouldProcessRow(row: any[]): boolean {
@@ -192,33 +213,52 @@ function shouldProcessRow(row: any[]): boolean {
   
   const description = row[0].toString().toLowerCase().trim();
   
-  const skipKeywords = [
-    'assets',
-    'liabilities',
-    'equity',
-    'income',
-    'revenue',
-    'expense',
-    'cost',
-    'total',
-    'net'
-  ];
+  // Skip totals and section headers
+  if (description.includes('total') || description === '') return false;
   
-  return !skipKeywords.some(keyword => description.includes(keyword));
+  // Skip if all values in the row are empty
+  const hasValues = row.some((cell, index) => 
+    index > 0 && cell && cell.toString().trim() !== ''
+  );
+  
+  return hasValues;
 }
 
 function determineAccountType(rowIndex: number, data: any[]): string {
+  const accountTypeMap: { [key: string]: string } = {
+    'revenue': 'Revenue/Income',
+    'income': 'Revenue/Income',
+    'expense': 'Cost/Expense',
+    'cost': 'Cost/Expense',
+    'asset': 'Asset',
+    'bank': 'Asset',
+    'liability': 'Liability',
+    'equity': 'Equity',
+    'capital': 'Equity'
+  };
+
+  // Check the current row's account type if available
+  const currentRow = data[rowIndex];
+  if (currentRow && currentRow[1]) {
+    const typeCell = currentRow[1].toString().toLowerCase().trim();
+    for (const [keyword, type] of Object.entries(accountTypeMap)) {
+      if (typeCell.includes(keyword)) {
+        return type;
+      }
+    }
+  }
+
+  // Look for context in previous rows
   for (let i = rowIndex - 1; i >= 0; i--) {
     const row = data[i];
     if (!row || !row[0]) continue;
     
     const cellValue = row[0].toString().toLowerCase().trim();
-    
-    if (cellValue.includes('assets')) return 'Asset';
-    if (cellValue.includes('liabilities')) return 'Liability';
-    if (cellValue.includes('equity')) return 'Equity';
-    if (cellValue.includes('income') || cellValue.includes('revenue')) return 'Revenue/Income';
-    if (cellValue.includes('expense') || cellValue.includes('cost')) return 'Cost/Expense';
+    for (const [keyword, type] of Object.entries(accountTypeMap)) {
+      if (cellValue.includes(keyword)) {
+        return type;
+      }
+    }
   }
   
   return 'Unknown';

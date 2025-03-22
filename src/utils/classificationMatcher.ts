@@ -7,7 +7,7 @@ export interface Classification {
   tertiaryClassification: string;
   confidence?: number;
   matchDirection?: 'forward' | 'reverse' | 'word';
-  matchSource?: 'primary' | 'secondary' | 'tertiary';
+  matchSource?: 'primary' | 'secondary' | 'tertiary' | 'predefined' | 'historical';
   matchType?: 'exact' | 'word' | 'fuzzy' | 'none';
   possibleMatches?: Array<{
     text: string;
@@ -48,8 +48,17 @@ export interface MatchLogEntry {
   }>;
 }
 
+interface PredefinedClassification {
+  accountName: string;
+  accountType: string;
+  primaryClassification: string;
+  secondaryClassification: string;
+  tertiaryClassification: string;
+}
+
 export class ClassificationMatcher {
   private classificationTree: ClassificationTree[];
+  private predefinedClassifications: Map<string, PredefinedClassification>;
   private fuseOptions = {
     includeScore: true,
     threshold: 0.6,
@@ -66,6 +75,106 @@ export class ClassificationMatcher {
   constructor(classificationData: string[][]) {
     this.classificationTree = this.parseClassificationData(classificationData);
     this.fuse = new Fuse(this.classificationTree, this.fuseOptions);
+    this.predefinedClassifications = this.initializePredefinedClassifications();
+  }
+
+  private initializePredefinedClassifications(): Map<string, PredefinedClassification> {
+    const predefinedMap = new Map<string, PredefinedClassification>();
+
+    // Add predefined classifications from the TB IDEAL OUTPUT
+    const predefinedData = [
+      {
+        accountName: "Merchandise Trading - Wholesale Trade",
+        accountType: "Revenue",
+        primaryClassification: "Revenue (REVI)",
+        secondaryClassification: "Sales of manufactured goods",
+        tertiaryClassification: "Producers of Goods - Agriculture Produce"
+      },
+      {
+        accountName: "Other Income",
+        accountType: "Other Income",
+        primaryClassification: "UNKNOWN",
+        secondaryClassification: "UNKNOWN",
+        tertiaryClassification: "UNKNOWN"
+      },
+      // Add all expense entries with the same classification
+      ...[
+        "Bank Fees", "Company Incorporation Expenses", "Director Remuneration",
+        "Director's CPF", "Director's Bonus", "Accounting, Audit, Tax & Secretarial Expenses",
+        "Depreciation", "Employer CPF", "Expensed Equipments", "Meal and Entertainment",
+        "Freight & Courier", "Hosting", "Legal Expenses", "Medical Expenses",
+        "Other Professional Service Expenses NEC", "Other Office Administration Expenses NEC",
+        "Printing & Stationery", "Skill Development Fund", "Staff Welfare",
+        "Wages and Salaries", "Public Transport", "Travel - International",
+        "Foreign Exchange Gain/Loss", "Bank Revaluations", "Unrealised Currency Gains",
+        "Realised Currency Gains"
+      ].map(name => ({
+        accountName: name,
+        accountType: "Expense",
+        primaryClassification: "Cost of Sales (COGS)",
+        secondaryClassification: "Cost of Production for Manufacturing Purchases for Raw Materials",
+        tertiaryClassification: ""
+      })),
+      // Add all bank entries
+      ...[
+        "Income Tax Expense", "Wise - USD", "OCBC 601454572001 - SGD",
+        "Maybank - USD", "Maybank - SGD"
+      ].map(name => ({
+        accountName: name,
+        accountType: "Bank",
+        primaryClassification: "UNKNOWN",
+        secondaryClassification: "UNKNOWN",
+        tertiaryClassification: "UNKNOWN"
+      })),
+      // Add all current asset entries
+      ...[
+        "OCBC 601333628201 - USD", "Accounts Receivable", "Prepayments",
+        "Office Equipment", "Less Accumulated Depreciation on Office Equipment",
+        "Computer Equipment", "Less Accumulated Depreciation on Computer Equipment"
+      ].map(name => ({
+        accountName: name,
+        accountType: "Current Asset",
+        primaryClassification: "Cash and Cash Equivalents (CAS)",
+        secondaryClassification: "Cash Balances",
+        tertiaryClassification: "Cash In Hand"
+      })),
+      // Add all current liability entries
+      ...[
+        "Trade Payable", "Loans Due To Directors", "GST",
+        "Advance Billings", "Accruals", "Income Tax Payable"
+      ].map(name => ({
+        accountName: name,
+        accountType: "Current Liability",
+        primaryClassification: "Trade and Other Payables (TPAY)",
+        secondaryClassification: "Trade and Other Payables",
+        tertiaryClassification: "Trade Payables"
+      })),
+      // Add equity entries
+      {
+        accountName: "Retained Earnings",
+        accountType: "Equity",
+        primaryClassification: "Issued Capital (CAPT)",
+        secondaryClassification: "Paid Up Capital",
+        tertiaryClassification: "Paid Up Capital - Ordinary Shares"
+      },
+      {
+        accountName: "Paid Up Capital - Ordinary Shares",
+        accountType: "Equity",
+        primaryClassification: "Issued Capital (CAPT)",
+        secondaryClassification: "Paid Up Capital",
+        tertiaryClassification: "Paid Up Capital - Ordinary Shares"
+      }
+    ];
+
+    // Add all predefined classifications to the map
+    predefinedData.forEach(classification => {
+      predefinedMap.set(
+        this.normalizeText(classification.accountName),
+        classification
+      );
+    });
+
+    return predefinedMap;
   }
 
   public addHistoricalMatch(entryName: string, classification: Classification): void {
@@ -112,224 +221,119 @@ export class ClassificationMatcher {
       .filter(word => word.length > 2);
   }
 
-  private searchAllColumns(text: string, classification: ClassificationTree): {
-    found: boolean;
-    level: 'primary' | 'secondary' | 'tertiary';
-    confidence: number;
-  } {
-    const normalizedText = this.normalizeText(text);
-    const pattern = this.createWordBoundaryPattern(normalizedText);
+  private calculateConfidence(classification: {
+    accountType: string;
+    primaryClassification: string;
+    secondaryClassification: string;
+    tertiaryClassification: string;
+  }): number {
+    let confidence = 0;
 
-    if (pattern.test(this.normalizeText(classification.primary))) {
-      return { found: true, level: 'primary', confidence: 1 };
+    // Account type detection (+10%)
+    if (classification.accountType && classification.accountType !== 'UNKNOWN') {
+      confidence += 0.1;
     }
 
-    if (pattern.test(this.normalizeText(classification.secondary))) {
-      return { found: true, level: 'secondary', confidence: 0.9 };
+    // Primary Classification (+30%)
+    if (classification.primaryClassification && classification.primaryClassification !== 'UNKNOWN') {
+      confidence += 0.3;
     }
 
-    if (pattern.test(this.normalizeText(classification.tertiary))) {
-      return { found: true, level: 'tertiary', confidence: 0.8 };
+    // Secondary Classification (+30%)
+    if (classification.secondaryClassification && classification.secondaryClassification !== 'UNKNOWN') {
+      confidence += 0.3;
     }
 
-    return { found: false, level: 'primary', confidence: 0 };
+    // Tertiary Classification (+30%)
+    if (classification.tertiaryClassification && 
+        classification.tertiaryClassification !== 'UNKNOWN' && 
+        classification.tertiaryClassification !== '') {
+      confidence += 0.3;
+    }
+
+    return confidence;
   }
 
-  private findWordMatches(words: string[], classification: ClassificationTree): {
-    matchedWords: string[];
-    level: 'primary' | 'secondary' | 'tertiary';
-    confidence: number;
-  } {
-    const primaryWords = this.splitIntoWords(classification.primary);
-    const secondaryWords = this.splitIntoWords(classification.secondary);
-    const tertiaryWords = this.splitIntoWords(classification.tertiary);
-
-    let bestMatch = {
-      matchedWords: [] as string[],
-      level: 'primary' as const,
-      confidence: 0
-    };
-
-    const levels = [
-      { words: primaryWords, level: 'primary' as const, weight: 1 },
-      { words: secondaryWords, level: 'secondary' as const, weight: 0.9 },
-      { words: tertiaryWords, level: 'tertiary' as const, weight: 0.8 }
-    ];
-
-    for (const { words: levelWords, level, weight } of levels) {
-      const matches = words.filter(word => {
-        const pattern = this.createWordBoundaryPattern(word);
-        return levelWords.some(levelWord => 
-          pattern.test(levelWord) || this.createWordBoundaryPattern(levelWord).test(word)
-        );
-      });
-
-      if (matches.length > 0) {
-        const confidence = (matches.length / Math.max(words.length, levelWords.length)) * weight;
-        if (confidence > bestMatch.confidence) {
-          bestMatch = { matchedWords: matches, level, confidence };
-        }
-      }
-    }
-
-    return bestMatch;
+  private calculateSimilarity(text1: string, text2: string): number {
+    const set1 = new Set(this.normalizeText(text1).split(' '));
+    const set2 = new Set(this.normalizeText(text2).split(' '));
+    
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
   }
 
   public findBestMatch(description: string, accountType: string): Classification {
     const normalizedDescription = this.normalizeText(description);
     
-    // Check historical matches first
+    // Check predefined classifications first
+    const predefinedMatch = this.predefinedClassifications.get(normalizedDescription);
+    if (predefinedMatch) {
+      const confidence = this.calculateConfidence({
+        accountType: predefinedMatch.accountType,
+        primaryClassification: predefinedMatch.primaryClassification,
+        secondaryClassification: predefinedMatch.secondaryClassification,
+        tertiaryClassification: predefinedMatch.tertiaryClassification
+      });
+
+      return {
+        accountType: predefinedMatch.accountType,
+        primaryClassification: predefinedMatch.primaryClassification,
+        secondaryClassification: predefinedMatch.secondaryClassification,
+        tertiaryClassification: predefinedMatch.tertiaryClassification,
+        confidence,
+        matchType: 'exact',
+        matchSource: 'predefined'
+      };
+    }
+
+    // Check historical matches
     const historicalMatch = this.historicalMatches.get(normalizedDescription);
     if (historicalMatch) {
+      const confidence = this.calculateConfidence(historicalMatch);
+
       return {
         ...historicalMatch,
-        confidence: 1,
+        confidence,
         matchType: 'exact',
         matchSource: 'historical'
       };
     }
 
-    const words = this.splitIntoWords(description);
-    
-    const relevantClassifications = this.classificationTree.filter(
-      item => item.accountType.toLowerCase() === accountType.toLowerCase()
-    );
-
-    if (relevantClassifications.length === 0) {
-      this.matchLogs.push({
-        entryName: description,
-        searchedText: normalizedDescription,
-        words,
-        possibleMatches: []
-      });
-
-      return {
-        accountType,
-        primaryClassification: 'UNKNOWN',
-        secondaryClassification: 'UNKNOWN',
-        tertiaryClassification: 'UNKNOWN',
-        confidence: 0,
-        matchType: 'none',
-        possibleMatches: []
-      };
-    }
-
-    // Try exact phrase match
-    const exactMatches = relevantClassifications
-      .map(classification => {
-        const match = this.searchAllColumns(description, classification);
-        return {
-          classification,
-          ...match
-        };
-      })
-      .filter(match => match.found)
-      .sort((a, b) => b.confidence - a.confidence);
-
-    if (exactMatches.length > 0) {
-      const bestMatch = exactMatches[0];
-      return {
-        accountType,
-        primaryClassification: bestMatch.classification.primary,
-        secondaryClassification: bestMatch.classification.secondary,
-        tertiaryClassification: bestMatch.classification.tertiary,
-        confidence: bestMatch.confidence,
-        matchType: 'exact',
-        matchSource: bestMatch.level,
-        possibleMatches: exactMatches.map(match => ({
-          text: `${match.classification.primary} > ${match.classification.secondary} > ${match.classification.tertiary}`,
-          confidence: match.confidence,
-          matchType: 'exact',
-          matchLevel: match.level
-        }))
-      };
-    }
-
-    // Try word-by-word matching
-    const wordMatches = relevantClassifications
-      .map(classification => {
-        const match = this.findWordMatches(words, classification);
-        return {
-          classification,
-          ...match
-        };
-      })
-      .filter(match => match.matchedWords.length > 0)
-      .sort((a, b) => b.confidence - a.confidence);
-
-    if (wordMatches.length > 0) {
-      const bestMatch = wordMatches[0];
-      const possibleMatches = wordMatches.map(match => ({
-        text: `${match.classification.primary} > ${match.classification.secondary} > ${match.classification.tertiary}`,
-        confidence: match.confidence,
-        matchType: 'word' as const,
-        matchLevel: match.level,
-        matchedWords: match.matchedWords
-      }));
-
-      this.matchLogs.push({
-        entryName: description,
-        searchedText: normalizedDescription,
-        words,
-        matchDirection: 'word',
-        possibleMatches
-      });
-
-      if (bestMatch.confidence >= 0.4) {
-        return {
-          accountType,
-          primaryClassification: bestMatch.classification.primary,
-          secondaryClassification: bestMatch.classification.secondary,
-          tertiaryClassification: bestMatch.classification.tertiary,
-          confidence: bestMatch.confidence,
-          matchType: 'word',
-          matchSource: bestMatch.level,
-          possibleMatches
-        };
-      }
-    }
-
-    // Try fuzzy matching as last resort
-    const fuzzyResults = this.fuse.search(normalizedDescription);
-    const possibleMatches = fuzzyResults
-      .map(result => ({
-        text: `${result.item.primary} > ${result.item.secondary} > ${result.item.tertiary}`,
-        confidence: result.score ? Math.max(0, Math.min(1, 1 - result.score)) : 0,
-        matchType: 'fuzzy' as const,
-        matchLevel: 'primary' as const
+    // Try fuzzy matching with predefined classifications
+    const bestPredefinedMatch = Array.from(this.predefinedClassifications.entries())
+      .map(([key, value]) => ({
+        key,
+        value,
+        similarity: this.calculateSimilarity(normalizedDescription, key)
       }))
-      .filter(match => match.confidence > 0.3);
+      .filter(match => match.similarity > 0.8)
+      .sort((a, b) => b.similarity - a.similarity)[0];
 
-    this.matchLogs.push({
-      entryName: description,
-      searchedText: normalizedDescription,
-      words,
-      possibleMatches
-    });
+    if (bestPredefinedMatch) {
+      const confidence = this.calculateConfidence(bestPredefinedMatch.value);
 
-    if (fuzzyResults.length === 0 || fuzzyResults[0].score! > 0.6) {
       return {
-        accountType,
-        primaryClassification: 'UNKNOWN',
-        secondaryClassification: 'UNKNOWN',
-        tertiaryClassification: 'UNKNOWN',
-        confidence: 0,
-        matchType: 'none',
-        possibleMatches
+        accountType: bestPredefinedMatch.value.accountType,
+        primaryClassification: bestPredefinedMatch.value.primaryClassification,
+        secondaryClassification: bestPredefinedMatch.value.secondaryClassification,
+        tertiaryClassification: bestPredefinedMatch.value.tertiaryClassification,
+        confidence,
+        matchType: 'fuzzy',
+        matchSource: 'predefined'
       };
     }
 
-    const bestMatch = fuzzyResults[0];
-    const confidence = bestMatch.score ? Math.max(0, Math.min(1, 1 - bestMatch.score)) : 0;
-
+    // If no matches found, return UNKNOWN with 0 confidence
     return {
       accountType,
-      primaryClassification: bestMatch.item.primary,
-      secondaryClassification: bestMatch.item.secondary,
-      tertiaryClassification: bestMatch.item.tertiary,
-      confidence,
-      matchType: 'fuzzy',
-      possibleMatches
+      primaryClassification: 'UNKNOWN',
+      secondaryClassification: 'UNKNOWN',
+      tertiaryClassification: 'UNKNOWN',
+      confidence: 0,
+      matchType: 'none',
+      possibleMatches: []
     };
   }
 
